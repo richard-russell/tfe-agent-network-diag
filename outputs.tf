@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 output "tool_install_status" {
-  description = "Status of the apt-get install step. 'ok' means dnsutils, netcat-openbsd and traceroute were installed successfully."
-  value       = data.external.install_tools.result["status"]
+  description = "Exit code and full apt-get log from the tool install step."
+  value = {
+    status = data.external.install_tools.result["status"]
+    log    = data.external.install_tools.result["log"]
+  }
 }
 
 output "dns_fqdn_resolution" {

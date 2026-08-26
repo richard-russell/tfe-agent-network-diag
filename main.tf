@@ -34,8 +34,10 @@ locals {
 
 data "external" "install_tools" {
   program = ["sh", "-c", <<-EOT
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsutils netcat-openbsd traceroute >/dev/null 2>&1
-    echo "{\"status\": \"ok\"}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y dnsutils netcat-openbsd traceroute >/tmp/apt-install.log 2>&1
+    exit_code=$?
+    log=$(cat /tmp/apt-install.log | tr '\n' '|' | sed 's/"/\\"/g')
+    echo "{\"status\": \"exit_code=$exit_code\", \"log\": \"$log\"}"
   EOT
   ]
 }
