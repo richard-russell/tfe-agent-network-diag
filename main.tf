@@ -111,16 +111,6 @@ data "external" "health_internal" {
   ]
 }
 
-# --- Environment variables visible to the Terraform run --- #
-
-data "external" "run_env" {
-  program = ["sh", "-c", <<-EOT
-    vars=$(env | grep -E '^(TFC_|TFE_|ATLAS_|TF_|https_proxy|http_proxy|no_proxy|SSL_CERT)' | sort | tr '\n' '|' | sed 's/"/\\"/g')
-    echo "{\"result\": \"$vars\"}"
-  EOT
-  ]
-}
-
 # --- DNS configuration in the agent pod --- #
 
 data "external" "dns_config" {
