@@ -29,17 +29,16 @@ locals {
   tools_installed = data.external.install_tools.result["status"]
 }
 
-# --- Probe available tools and runtimes --- #
+# --- Install diagnostic tools (via sudo apt-get) --- #
 
 data "external" "install_tools" {
   program = ["sh", "-c", <<-EOT
     whoami=$(whoami 2>/dev/null || echo "unknown")
-    python=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
-    perl=$(command -v perl 2>/dev/null || echo "")
-    nc=$(command -v nc 2>/dev/null || echo "")
-    dig=$(command -v dig 2>/dev/null || echo "")
-    traceroute=$(command -v traceroute 2>/dev/null || echo "")
-    echo "{\"status\": \"ok\", \"log\": \"whoami=$whoami python=$python perl=$perl nc=$nc dig=$dig traceroute=$traceroute\"}"
+    sudo_available=$(command -v sudo 2>/dev/null || echo "")
+    DEBIAN_FRONTEND=noninteractive sudo -n apt-get install -y -qq dnsutils netcat-openbsd traceroute >/tmp/apt-install.log 2>&1
+    exit_code=$?
+    log=$(cat /tmp/apt-install.log | tr '\n' '|' | sed 's/"/\\"/g')
+    echo "{\"status\": \"exit_code=$exit_code\", \"log\": \"whoami=$whoami sudo=$sudo_available apt=$log\"}"
   EOT
   ]
 }
