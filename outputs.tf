@@ -1,21 +1,13 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-output "tool_install_status" {
-  description = "Exit code and full apt-get log from the tool install step."
-  value = {
-    status = data.external.install_tools.result["status"]
-    log    = data.external.install_tools.result["log"]
-  }
-}
-
 output "dns_fqdn_resolution" {
-  description = "dig output for the external TFE FQDN. After CoreDNS rewrite, should return the ClusterIP."
+  description = "nslookup output for the external TFE FQDN. After CoreDNS rewrite, should return the ClusterIP."
   value       = data.external.dns_fqdn.result["result"]
 }
 
 output "dns_internal_svc_resolution" {
-  description = "dig output for the internal Kubernetes service DNS name."
+  description = "nslookup output for the internal Kubernetes service DNS name."
   value       = data.external.dns_internal.result["result"]
 }
 
@@ -25,22 +17,6 @@ output "coredns_rewrite_verified" {
     fqdn_resolves_to         = data.external.dns_rewrite_check.result["fqdn_resolves_to"]
     internal_svc_resolves_to = data.external.dns_rewrite_check.result["internal_svc_resolves_to"]
     ips_match                = data.external.dns_rewrite_check.result["ips_match"]
-  }
-}
-
-output "tcp_port_443_fqdn" {
-  description = "nc TCP probe on port 443 via the external FQDN."
-  value = {
-    status = data.external.tcp_fqdn_443.result["status"]
-    detail = data.external.tcp_fqdn_443.result["detail"]
-  }
-}
-
-output "tcp_port_443_internal_svc" {
-  description = "nc TCP probe on port 443 via the internal Kubernetes service DNS name."
-  value = {
-    status = data.external.tcp_internal_443.result["status"]
-    detail = data.external.tcp_internal_443.result["detail"]
   }
 }
 
@@ -75,11 +51,6 @@ output "ping_fqdn" {
 }
 
 output "ping_internal_svc" {
-  description = "Ping the internal Kubernetes service DNS name (4 packets) for comparison."
+  description = "Ping the internal Kubernetes service DNS name (4 packets) for RTT comparison."
   value       = data.external.ping_internal.result["result"]
-}
-
-output "traceroute_to_fqdn" {
-  description = "Traceroute to the external FQDN (max 5 hops). If CoreDNS rewrite is working, traffic should arrive in 1 hop via the ClusterIP."
-  value       = data.external.traceroute_fqdn.result["result"]
 }

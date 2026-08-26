@@ -4,6 +4,9 @@
 # Network diagnostics — runs inside a TFE agent pod to prove CoreDNS rewrite
 # and in-cluster connectivity to the TFE service are working correctly.
 #
+# Runs as user 'tfc-agent' (non-root, no sudo, no package manager access).
+# Available tools: curl, openssl, awk, grep, sed, ping.
+#
 # Usage:
 #   1. Create a TFE workspace backed by this directory, using an agent pool
 #      assigned to the tfe-agents namespace on this cluster.
@@ -25,39 +28,21 @@ locals {
   tfe_https_url      = "https://${var.tfe_fqdn}"
   tfe_internal_https = "https://${var.tfe_internal_svc}"
   health_path        = "/api/v1/health/readiness?timeout=5"
-  # Sentinel value consumed by depends_on to gate all diagnostics on tool install
-  tools_installed = data.external.install_tools.result["status"]
 }
 
-# --- Install diagnostic tools (via sudo apt-get) --- #
-
-data "external" "install_tools" {
-  program = ["sh", "-c", <<-EOT
-    whoami=$(whoami 2>/dev/null || echo "unknown")
-    sudo_available=$(command -v sudo 2>/dev/null || echo "")
-    DEBIAN_FRONTEND=noninteractive sudo -n apt-get install -y -qq dnsutils netcat-openbsd traceroute >/tmp/apt-install.log 2>&1
-    exit_code=$?
-    log=$(cat /tmp/apt-install.log | tr '\n' '|' | sed 's/"/\\"/g')
-    echo "{\"status\": \"exit_code=$exit_code\", \"log\": \"whoami=$whoami sudo=$sudo_available apt=$log\"}"
-  EOT
-  ]
-}
-
-# --- DNS resolution via dig --- #
+# --- DNS resolution via nslookup --- #
 
 data "external" "dns_fqdn" {
-  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    result=$(dig +short +time=5 +tries=1 "${var.tfe_fqdn}" 2>&1 || true)
+    result=$(nslookup "${var.tfe_fqdn}" 2>&1 || true)
     echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
 
 data "external" "dns_internal" {
-  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    result=$(dig +short +time=5 +tries=1 "${var.tfe_internal_svc}" 2>&1 || true)
+    result=$(nslookup "${var.tfe_internal_svc}" 2>&1 || true)
     echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
@@ -66,10 +51,9 @@ data "external" "dns_internal" {
 # --- Confirm fqdn and internal svc resolve to same IP (proves CoreDNS rewrite) --- #
 
 data "external" "dns_rewrite_check" {
-  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    fqdn_ip=$(dig +short +time=5 +tries=1 "${var.tfe_fqdn}" | grep -E '^[0-9]+\.' | head -1)
-    svc_ip=$(dig +short +time=5 +tries=1 "${var.tfe_internal_svc}" | grep -E '^[0-9]+\.' | head -1)
+    fqdn_ip=$(nslookup "${var.tfe_fqdn}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
+    svc_ip=$(nslookup "${var.tfe_internal_svc}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
     if [ "$fqdn_ip" = "$svc_ip" ] && [ -n "$fqdn_ip" ]; then
       match="true"
     else
@@ -80,32 +64,9 @@ data "external" "dns_rewrite_check" {
   ]
 }
 
-# --- TCP reachability on port 443 via nc --- #
-
-data "external" "tcp_fqdn_443" {
-  depends_on = [data.external.install_tools]
-  program = ["sh", "-c", <<-EOT
-    result=$(nc -zv -w5 "${var.tfe_fqdn}" 443 2>&1 || true)
-    status=$(echo "$result" | grep -qi "succeeded\|open\|Connected" && echo "open" || echo "failed")
-    echo "{\"status\": \"$status\", \"detail\": $(echo "$result" | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
-  EOT
-  ]
-}
-
-data "external" "tcp_internal_443" {
-  depends_on = [data.external.install_tools]
-  program = ["sh", "-c", <<-EOT
-    result=$(nc -zv -w5 "${var.tfe_internal_svc}" 443 2>&1 || true)
-    status=$(echo "$result" | grep -qi "succeeded\|open\|Connected" && echo "open" || echo "failed")
-    echo "{\"status\": \"$status\", \"detail\": $(echo "$result" | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
-  EOT
-  ]
-}
-
 # --- TLS certificate details via openssl --- #
 
 data "external" "tls_cert_check" {
-  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
     result=$(echo | openssl s_client -connect "${var.tfe_fqdn}:443" -servername "${var.tfe_fqdn}" 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null || echo "failed")
     echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
@@ -155,7 +116,7 @@ data "external" "curl_timing_internal" {
   ]
 }
 
-# --- Ping: round-trip time confirms in-cluster vs external routing --- #
+# --- Ping: RTT comparison between FQDN and internal svc --- #
 
 data "external" "ping_fqdn" {
   program = ["sh", "-c", <<-EOT
@@ -168,17 +129,6 @@ data "external" "ping_fqdn" {
 data "external" "ping_internal" {
   program = ["sh", "-c", <<-EOT
     result=$(ping -c 4 -W 2 "${var.tfe_internal_svc}" 2>&1 || true)
-    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
-  EOT
-  ]
-}
-
-# --- Traceroute to FQDN: 1 hop = in-cluster (ClusterIP); multiple hops = going via NLB --- #
-
-data "external" "traceroute_fqdn" {
-  depends_on = [data.external.install_tools]
-  program = ["sh", "-c", <<-EOT
-    result=$(traceroute -n -m 5 -w 2 "${var.tfe_fqdn}" 2>&1 || true)
     echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
