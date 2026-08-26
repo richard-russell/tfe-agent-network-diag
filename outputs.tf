@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: MPL-2.0
 
 output "dns_fqdn_resolution" {
-  description = "Raw dig output for the external TFE FQDN. Should return the ClusterIP after CoreDNS rewrite is applied."
+  description = "nslookup output for the external TFE FQDN. After CoreDNS rewrite, should return the ClusterIP."
   value       = data.external.dns_fqdn.result["result"]
 }
 
 output "dns_internal_svc_resolution" {
-  description = "Raw dig output for the internal Kubernetes service DNS name."
+  description = "nslookup output for the internal Kubernetes service DNS name."
   value       = data.external.dns_internal.result["result"]
 }
 
@@ -21,28 +21,22 @@ output "coredns_rewrite_verified" {
 }
 
 output "tcp_port_443_fqdn" {
-  description = "TCP reachability on port 443 via the external FQDN (routed via CoreDNS rewrite)."
-  value = {
-    status = data.external.tcp_fqdn_443.result["status"]
-    detail = data.external.tcp_fqdn_443.result["detail"]
-  }
+  description = "HTTP response code from a curl connect to port 443 via the external FQDN. Non-empty = TCP is open."
+  value       = data.external.tcp_fqdn_443.result["result"]
 }
 
 output "tcp_port_443_internal_svc" {
-  description = "TCP reachability on port 443 via the internal Kubernetes service DNS name directly."
-  value = {
-    status = data.external.tcp_internal_443.result["status"]
-    detail = data.external.tcp_internal_443.result["detail"]
-  }
+  description = "HTTP response code from a curl connect to port 443 via the internal service DNS name."
+  value       = data.external.tcp_internal_443.result["result"]
 }
 
 output "tls_certificate" {
-  description = "TLS certificate details (subject, issuer, validity dates, SANs) for the TFE endpoint."
+  description = "TLS certificate details (subject, issuer, validity dates) for the TFE endpoint, extracted from curl verbose output."
   value       = data.external.tls_cert_check.result["result"]
 }
 
 output "health_check_via_fqdn" {
-  description = "HTTP response code from the TFE readiness endpoint via the external FQDN. Expects 200."
+  description = "HTTP response code from the TFE readiness endpoint via the external FQDN. Expects 200 once CoreDNS rewrite is active."
   value       = data.external.health_fqdn.result["http_code"]
 }
 
@@ -51,7 +45,12 @@ output "health_check_via_internal_svc" {
   value       = data.external.health_internal.result["http_code"]
 }
 
-output "traceroute_to_fqdn" {
-  description = "Traceroute to the external FQDN. If CoreDNS rewrite is working, traffic should reach the destination in 1 hop (ClusterIP, no external routing)."
-  value       = data.external.traceroute_fqdn.result["result"]
+output "curl_timing_fqdn" {
+  description = "curl timing and remote_ip for the external FQDN. If CoreDNS rewrite is working, remote_ip should be the ClusterIP (172.20.x.x), not an NLB IP. time_connect should be sub-millisecond."
+  value       = data.external.curl_timing_fqdn.result["result"]
+}
+
+output "curl_timing_internal_svc" {
+  description = "curl timing and remote_ip for the internal service DNS name directly."
+  value       = data.external.curl_timing_internal.result["result"]
 }

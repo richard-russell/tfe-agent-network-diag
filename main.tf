@@ -27,20 +27,20 @@ locals {
   health_path        = "/api/v1/health/readiness?timeout=5"
 }
 
-# --- DNS resolution checks --- #
+# --- DNS resolution via nslookup --- #
 
 data "external" "dns_fqdn" {
   program = ["sh", "-c", <<-EOT
-    result=$(dig +short +time=5 +tries=1 "${var.tfe_fqdn}" 2>&1 || true)
-    echo "{\"result\": $(echo "$result" | head -5 | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    result=$(nslookup "${var.tfe_fqdn}" 2>&1 || true)
+    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
 
 data "external" "dns_internal" {
   program = ["sh", "-c", <<-EOT
-    result=$(dig +short +time=5 +tries=1 "${var.tfe_internal_svc}" 2>&1 || true)
-    echo "{\"result\": $(echo "$result" | head -5 | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    result=$(nslookup "${var.tfe_internal_svc}" 2>&1 || true)
+    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
@@ -49,8 +49,8 @@ data "external" "dns_internal" {
 
 data "external" "dns_rewrite_check" {
   program = ["sh", "-c", <<-EOT
-    fqdn_ip=$(dig +short +time=5 +tries=1 "${var.tfe_fqdn}" | grep -E '^[0-9]+\.' | head -1)
-    svc_ip=$(dig +short +time=5 +tries=1 "${var.tfe_internal_svc}" | grep -E '^[0-9]+\.' | head -1)
+    fqdn_ip=$(nslookup "${var.tfe_fqdn}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
+    svc_ip=$(nslookup "${var.tfe_internal_svc}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
     if [ "$fqdn_ip" = "$svc_ip" ] && [ -n "$fqdn_ip" ]; then
       match="true"
     else
@@ -61,32 +61,30 @@ data "external" "dns_rewrite_check" {
   ]
 }
 
-# --- TCP reachability on port 443 --- #
+# --- TCP reachability on port 443 via curl connect-only --- #
 
 data "external" "tcp_fqdn_443" {
   program = ["sh", "-c", <<-EOT
-    result=$(nc -zv -w5 "${var.tfe_fqdn}" 443 2>&1 || true)
-    status=$(echo "$result" | grep -qi "succeeded\|open\|Connected" && echo "open" || echo "failed")
-    echo "{\"status\": \"$status\", \"detail\": $(echo "$result" | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    result=$(curl -sk --connect-timeout 5 -o /dev/null -w "%%{http_code}" "${local.tfe_https_url}" 2>&1 || echo "failed")
+    echo "{\"result\": \"$result\"}"
   EOT
   ]
 }
 
 data "external" "tcp_internal_443" {
   program = ["sh", "-c", <<-EOT
-    result=$(nc -zv -w5 "${var.tfe_internal_svc}" 443 2>&1 || true)
-    status=$(echo "$result" | grep -qi "succeeded\|open\|Connected" && echo "open" || echo "failed")
-    echo "{\"status\": \"$status\", \"detail\": $(echo "$result" | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    result=$(curl -sk --connect-timeout 5 -o /dev/null -w "%%{http_code}" "${local.tfe_internal_https}" 2>&1 || echo "failed")
+    echo "{\"result\": \"$result\"}"
   EOT
   ]
 }
 
-# --- TLS certificate check — confirm cert is valid for the FQDN --- #
+# --- TLS certificate details via curl --- #
 
 data "external" "tls_cert_check" {
   program = ["sh", "-c", <<-EOT
-    result=$(echo | openssl s_client -connect "${var.tfe_fqdn}:443" -servername "${var.tfe_fqdn}" 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null || echo "failed")
-    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    result=$(curl -svk --connect-timeout 5 -o /dev/null "${local.tfe_https_url}" 2>&1 | grep -E "subject:|issuer:|expire date:|start date:|SSL connection" | tr '\n' '|' || echo "failed")
+    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
@@ -95,7 +93,7 @@ data "external" "tls_cert_check" {
 
 data "external" "health_fqdn" {
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk -o /dev/null -w "%%{http_code}" --max-time 10 "${local.tfe_https_url}${local.health_path}" 2>&1 || echo "failed")
+    result=$(curl -sk --max-time 10 -o /dev/null -w "%%{http_code}" "${local.tfe_https_url}${local.health_path}" 2>&1 || echo "failed")
     echo "{\"http_code\": \"$result\"}"
   EOT
   ]
@@ -105,18 +103,30 @@ data "external" "health_fqdn" {
 
 data "external" "health_internal" {
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk -o /dev/null -w "%%{http_code}" --max-time 10 "${local.tfe_internal_https}${local.health_path}" 2>&1 || echo "failed")
+    result=$(curl -sk --max-time 10 -o /dev/null -w "%%{http_code}" "${local.tfe_internal_https}${local.health_path}" 2>&1 || echo "failed")
     echo "{\"http_code\": \"$result\"}"
   EOT
   ]
 }
 
-# --- traceroute to FQDN — shows whether traffic stays in-cluster --- #
+# --- Route check: how many hops to FQDN vs internal svc (using curl timing) --- #
 
-data "external" "traceroute_fqdn" {
+data "external" "curl_timing_fqdn" {
   program = ["sh", "-c", <<-EOT
-    result=$(traceroute -n -m 5 -w 2 "${var.tfe_fqdn}" 2>&1 || true)
-    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    result=$(curl -sk --max-time 10 -o /dev/null \
+      -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total} remote_ip=%%{remote_ip}" \
+      "${local.tfe_https_url}" 2>&1 || echo "failed")
+    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+  EOT
+  ]
+}
+
+data "external" "curl_timing_internal" {
+  program = ["sh", "-c", <<-EOT
+    result=$(curl -sk --max-time 10 -o /dev/null \
+      -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total} remote_ip=%%{remote_ip}" \
+      "${local.tfe_internal_https}" 2>&1 || echo "failed")
+    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
