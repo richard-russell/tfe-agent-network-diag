@@ -133,20 +133,3 @@ data "external" "curl_timing_internal" {
   ]
 }
 
-# --- Ping: RTT comparison between FQDN and internal svc --- #
-
-data "external" "ping_fqdn" {
-  program = ["sh", "-c", <<-EOT
-    result=$(ping -c 4 -W 2 "${var.tfe_fqdn}" 2>&1 || true)
-    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
-  EOT
-  ]
-}
-
-data "external" "ping_internal" {
-  program = ["sh", "-c", <<-EOT
-    result=$(ping -c 4 -W 2 "${var.tfe_internal_svc}" 2>&1 || true)
-    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
-  EOT
-  ]
-}
