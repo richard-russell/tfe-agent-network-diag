@@ -95,7 +95,7 @@ data "external" "tls_cert_check" {
 
 data "external" "health_fqdn" {
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 10 "${local.tfe_https_url}${local.health_path}" 2>&1 || echo "failed")
+    result=$(curl -sk -o /dev/null -w "%%{http_code}" --max-time 10 "${local.tfe_https_url}${local.health_path}" 2>&1 || echo "failed")
     echo "{\"http_code\": \"$result\"}"
   EOT
   ]
@@ -105,7 +105,7 @@ data "external" "health_fqdn" {
 
 data "external" "health_internal" {
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 10 "${local.tfe_internal_https}${local.health_path}" 2>&1 || echo "failed")
+    result=$(curl -sk -o /dev/null -w "%%{http_code}" --max-time 10 "${local.tfe_internal_https}${local.health_path}" 2>&1 || echo "failed")
     echo "{\"http_code\": \"$result\"}"
   EOT
   ]
