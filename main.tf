@@ -25,21 +25,36 @@ locals {
   tfe_https_url      = "https://${var.tfe_fqdn}"
   tfe_internal_https = "https://${var.tfe_internal_svc}"
   health_path        = "/api/v1/health/readiness?timeout=5"
+  # Sentinel value consumed by depends_on to gate all diagnostics on tool install
+  tools_installed = data.external.install_tools.result["status"]
 }
 
-# --- DNS resolution via nslookup --- #
+# --- Install diagnostic tools once --- #
+# dnsutils: dig, nslookup | netcat-openbsd: nc | traceroute: traceroute
+
+data "external" "install_tools" {
+  program = ["sh", "-c", <<-EOT
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsutils netcat-openbsd traceroute 2>&1
+    echo "{\"status\": \"ok\"}"
+  EOT
+  ]
+}
+
+# --- DNS resolution via dig --- #
 
 data "external" "dns_fqdn" {
+  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    result=$(nslookup "${var.tfe_fqdn}" 2>&1 || true)
+    result=$(dig +short +time=5 +tries=1 "${var.tfe_fqdn}" 2>&1 || true)
     echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
 
 data "external" "dns_internal" {
+  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    result=$(nslookup "${var.tfe_internal_svc}" 2>&1 || true)
+    result=$(dig +short +time=5 +tries=1 "${var.tfe_internal_svc}" 2>&1 || true)
     echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
@@ -48,9 +63,10 @@ data "external" "dns_internal" {
 # --- Confirm fqdn and internal svc resolve to same IP (proves CoreDNS rewrite) --- #
 
 data "external" "dns_rewrite_check" {
+  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    fqdn_ip=$(nslookup "${var.tfe_fqdn}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
-    svc_ip=$(nslookup "${var.tfe_internal_svc}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
+    fqdn_ip=$(dig +short +time=5 +tries=1 "${var.tfe_fqdn}" | grep -E '^[0-9]+\.' | head -1)
+    svc_ip=$(dig +short +time=5 +tries=1 "${var.tfe_internal_svc}" | grep -E '^[0-9]+\.' | head -1)
     if [ "$fqdn_ip" = "$svc_ip" ] && [ -n "$fqdn_ip" ]; then
       match="true"
     else
@@ -61,30 +77,35 @@ data "external" "dns_rewrite_check" {
   ]
 }
 
-# --- TCP reachability on port 443 via curl connect-only --- #
+# --- TCP reachability on port 443 via nc --- #
 
 data "external" "tcp_fqdn_443" {
+  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk --connect-timeout 5 -o /dev/null -w "%%{http_code}" "${local.tfe_https_url}" 2>&1 || echo "failed")
-    echo "{\"result\": \"$result\"}"
+    result=$(nc -zv -w5 "${var.tfe_fqdn}" 443 2>&1 || true)
+    status=$(echo "$result" | grep -qi "succeeded\|open\|Connected" && echo "open" || echo "failed")
+    echo "{\"status\": \"$status\", \"detail\": $(echo "$result" | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
 
 data "external" "tcp_internal_443" {
+  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk --connect-timeout 5 -o /dev/null -w "%%{http_code}" "${local.tfe_internal_https}" 2>&1 || echo "failed")
-    echo "{\"result\": \"$result\"}"
+    result=$(nc -zv -w5 "${var.tfe_internal_svc}" 443 2>&1 || true)
+    status=$(echo "$result" | grep -qi "succeeded\|open\|Connected" && echo "open" || echo "failed")
+    echo "{\"status\": \"$status\", \"detail\": $(echo "$result" | tr '\n' ' ' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
 
-# --- TLS certificate details via curl --- #
+# --- TLS certificate details via openssl --- #
 
 data "external" "tls_cert_check" {
+  depends_on = [data.external.install_tools]
   program = ["sh", "-c", <<-EOT
-    result=$(curl -svk --connect-timeout 5 -o /dev/null "${local.tfe_https_url}" 2>&1 | grep -E "subject:|issuer:|expire date:|start date:|SSL connection" | tr '\n' '|' || echo "failed")
-    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    result=$(echo | openssl s_client -connect "${var.tfe_fqdn}:443" -servername "${var.tfe_fqdn}" 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null || echo "failed")
+    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
@@ -109,7 +130,7 @@ data "external" "health_internal" {
   ]
 }
 
-# --- Route check: how many hops to FQDN vs internal svc (using curl timing) --- #
+# --- curl timing: remote_ip confirms whether traffic is hitting ClusterIP or NLB --- #
 
 data "external" "curl_timing_fqdn" {
   program = ["sh", "-c", <<-EOT
@@ -127,6 +148,17 @@ data "external" "curl_timing_internal" {
       -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total} remote_ip=%%{remote_ip}" \
       "${local.tfe_internal_https}" 2>&1 || echo "failed")
     echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+  EOT
+  ]
+}
+
+# --- Traceroute to FQDN: 1 hop = in-cluster (ClusterIP); multiple hops = going via NLB --- #
+
+data "external" "traceroute_fqdn" {
+  depends_on = [data.external.install_tools]
+  program = ["sh", "-c", <<-EOT
+    result=$(traceroute -n -m 5 -w 2 "${var.tfe_fqdn}" 2>&1 || true)
+    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
