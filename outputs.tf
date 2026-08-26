@@ -1,6 +1,11 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
+output "run_env_vars" {
+  description = "TFC_/TFE_/TF_ and proxy environment variables visible inside the Terraform run. Shows TFE_ADDRESS and any proxy settings."
+  value       = data.external.run_env.result["result"]
+}
+
 output "dns_config" {
   description = "Contents of /etc/resolv.conf in the agent pod — shows which DNS server is being used and the search domains."
   value       = data.external.dns_config.result["resolv_conf"]
