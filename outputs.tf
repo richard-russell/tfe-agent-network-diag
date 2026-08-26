@@ -69,6 +69,16 @@ output "curl_timing_internal_svc" {
   value       = data.external.curl_timing_internal.result["result"]
 }
 
+output "ping_fqdn" {
+  description = "Ping the external FQDN (4 packets). RTT should be sub-millisecond if CoreDNS rewrite is routing to the ClusterIP."
+  value       = data.external.ping_fqdn.result["result"]
+}
+
+output "ping_internal_svc" {
+  description = "Ping the internal Kubernetes service DNS name (4 packets) for comparison."
+  value       = data.external.ping_internal.result["result"]
+}
+
 output "traceroute_to_fqdn" {
   description = "Traceroute to the external FQDN (max 5 hops). If CoreDNS rewrite is working, traffic should arrive in 1 hop via the ClusterIP."
   value       = data.external.traceroute_fqdn.result["result"]

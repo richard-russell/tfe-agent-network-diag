@@ -156,6 +156,24 @@ data "external" "curl_timing_internal" {
   ]
 }
 
+# --- Ping: round-trip time confirms in-cluster vs external routing --- #
+
+data "external" "ping_fqdn" {
+  program = ["sh", "-c", <<-EOT
+    result=$(ping -c 4 -W 2 "${var.tfe_fqdn}" 2>&1 || true)
+    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+  EOT
+  ]
+}
+
+data "external" "ping_internal" {
+  program = ["sh", "-c", <<-EOT
+    result=$(ping -c 4 -W 2 "${var.tfe_internal_svc}" 2>&1 || true)
+    echo "{\"result\": $(echo "$result" | tr '\n' '|' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+  EOT
+  ]
+}
+
 # --- Traceroute to FQDN: 1 hop = in-cluster (ClusterIP); multiple hops = going via NLB --- #
 
 data "external" "traceroute_fqdn" {
