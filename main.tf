@@ -29,15 +29,17 @@ locals {
   tools_installed = data.external.install_tools.result["status"]
 }
 
-# --- Install diagnostic tools once --- #
-# dnsutils: dig, nslookup | netcat-openbsd: nc | traceroute: traceroute
+# --- Probe available tools and runtimes --- #
 
 data "external" "install_tools" {
   program = ["sh", "-c", <<-EOT
-    DEBIAN_FRONTEND=noninteractive apt-get install -y dnsutils netcat-openbsd traceroute >/tmp/apt-install.log 2>&1
-    exit_code=$?
-    log=$(cat /tmp/apt-install.log | tr '\n' '|' | sed 's/"/\\"/g')
-    echo "{\"status\": \"exit_code=$exit_code\", \"log\": \"$log\"}"
+    whoami=$(whoami 2>/dev/null || echo "unknown")
+    python=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
+    perl=$(command -v perl 2>/dev/null || echo "")
+    nc=$(command -v nc 2>/dev/null || echo "")
+    dig=$(command -v dig 2>/dev/null || echo "")
+    traceroute=$(command -v traceroute 2>/dev/null || echo "")
+    echo "{\"status\": \"ok\", \"log\": \"whoami=$whoami python=$python perl=$perl nc=$nc dig=$dig traceroute=$traceroute\"}"
   EOT
   ]
 }
