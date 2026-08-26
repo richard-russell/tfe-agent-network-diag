@@ -11,6 +11,16 @@ output "dns_internal_svc_resolution" {
   value       = data.external.dns_internal.result["result"]
 }
 
+output "getent_fqdn" {
+  description = "getent hosts output for the external FQDN. Uses system NSS resolver — most accurate reflection of what the CoreDNS rewrite produces."
+  value       = data.external.getent_fqdn.result["result"]
+}
+
+output "getent_internal_svc" {
+  description = "getent hosts output for the internal Kubernetes service DNS name."
+  value       = data.external.getent_internal.result["result"]
+}
+
 output "coredns_rewrite_verified" {
   description = "Whether the external FQDN and internal service name resolve to the same IP, confirming the CoreDNS rewrite is active."
   value = {

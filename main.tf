@@ -30,7 +30,7 @@ locals {
   health_path        = "/api/v1/health/readiness?timeout=5"
 }
 
-# --- DNS resolution via nslookup --- #
+# --- DNS resolution via nslookup and getent --- #
 
 data "external" "dns_fqdn" {
   program = ["sh", "-c", <<-EOT
@@ -48,12 +48,29 @@ data "external" "dns_internal" {
   ]
 }
 
+# getent uses the system NSS resolver — reflects CoreDNS rewrite via /etc/resolv.conf
+data "external" "getent_fqdn" {
+  program = ["sh", "-c", <<-EOT
+    result=$(getent hosts "${var.tfe_fqdn}" 2>&1 || echo "not found")
+    echo "{\"result\": \"$result\"}"
+  EOT
+  ]
+}
+
+data "external" "getent_internal" {
+  program = ["sh", "-c", <<-EOT
+    result=$(getent hosts "${var.tfe_internal_svc}" 2>&1 || echo "not found")
+    echo "{\"result\": \"$result\"}"
+  EOT
+  ]
+}
+
 # --- Confirm fqdn and internal svc resolve to same IP (proves CoreDNS rewrite) --- #
 
 data "external" "dns_rewrite_check" {
   program = ["sh", "-c", <<-EOT
-    fqdn_ip=$(nslookup "${var.tfe_fqdn}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
-    svc_ip=$(nslookup "${var.tfe_internal_svc}" 2>/dev/null | awk '/^Address: /{print $2}' | grep -v '#' | head -1)
+    fqdn_ip=$(getent hosts "${var.tfe_fqdn}" 2>/dev/null | awk '{print $1}' | head -1)
+    svc_ip=$(getent hosts "${var.tfe_internal_svc}" 2>/dev/null | awk '{print $1}' | head -1)
     if [ "$fqdn_ip" = "$svc_ip" ] && [ -n "$fqdn_ip" ]; then
       match="true"
     else
