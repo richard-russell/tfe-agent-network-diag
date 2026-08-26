@@ -57,11 +57,17 @@ output "health_check_via_internal_svc" {
 
 output "curl_timing_fqdn" {
   description = "curl timing and remote_ip for the external FQDN. If CoreDNS rewrite is working, remote_ip should be the ClusterIP (172.20.x.x). time_connect should be sub-millisecond."
-  value       = data.external.curl_timing_fqdn.result["result"]
+  value = {
+    timing   = data.external.curl_timing_fqdn.result["result"]
+    redirect = data.external.curl_timing_fqdn.result["redirect"]
+  }
 }
 
 output "curl_timing_internal_svc" {
   description = "curl timing and remote_ip for the internal service DNS name directly."
-  value       = data.external.curl_timing_internal.result["result"]
+  value = {
+    timing   = data.external.curl_timing_internal.result["result"]
+    redirect = data.external.curl_timing_internal.result["redirect"]
+  }
 }
 
