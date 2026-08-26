@@ -34,7 +34,7 @@ locals {
 
 data "external" "install_tools" {
   program = ["sh", "-c", <<-EOT
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsutils netcat-openbsd traceroute 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsutils netcat-openbsd traceroute >/dev/null 2>&1
     echo "{\"status\": \"ok\"}"
   EOT
   ]
