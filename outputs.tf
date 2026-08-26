@@ -1,6 +1,11 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
+output "dns_config" {
+  description = "Contents of /etc/resolv.conf in the agent pod — shows which DNS server is being used and the search domains."
+  value       = data.external.dns_config.result["resolv_conf"]
+}
+
 output "internet_egress" {
   description = "curl to https://www.google.com. Confirms whether the agent pod has outbound internet access and external DNS resolution."
   value       = data.external.internet_egress.result["result"]

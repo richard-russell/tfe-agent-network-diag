@@ -111,6 +111,16 @@ data "external" "health_internal" {
   ]
 }
 
+# --- DNS configuration in the agent pod --- #
+
+data "external" "dns_config" {
+  program = ["sh", "-c", <<-EOT
+    resolv=$(cat /etc/resolv.conf 2>/dev/null | tr '\n' '|' | sed 's/"/\\"/g')
+    echo "{\"resolv_conf\": \"$resolv\"}"
+  EOT
+  ]
+}
+
 # --- Internet egress check --- #
 
 data "external" "internet_egress" {
