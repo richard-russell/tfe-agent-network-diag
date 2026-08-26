@@ -140,8 +140,8 @@ data "external" "curl_timing_fqdn" {
     result=$(curl -sk --max-time 10 -o /dev/null \
       -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total} remote_ip=%%{remote_ip}" \
       "${local.tfe_https_url}" 2>&1 || echo "failed")
-    redirect=$(curl -sk --max-time 10 -o /dev/null -D - "${local.tfe_https_url}" 2>/dev/null | grep -i "^location:" || echo "no redirect")
-    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}'), \"redirect\": $(echo "$redirect" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    redirect=$(curl -sk --max-time 10 -o /dev/null -D - "${local.tfe_https_url}" 2>/dev/null | grep -i "^location:" | tr -d '\r' || echo "no redirect")
+    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}'), \"redirect\": $(echo "$redirect" | tr -d '\r' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
@@ -151,8 +151,8 @@ data "external" "curl_timing_internal" {
     result=$(curl -sk --max-time 10 -o /dev/null \
       -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total} remote_ip=%%{remote_ip}" \
       "${local.tfe_internal_https}" 2>&1 || echo "failed")
-    redirect=$(curl -sk --max-time 10 -o /dev/null -D - "${local.tfe_internal_https}" 2>/dev/null | grep -i "^location:" || echo "no redirect")
-    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}'), \"redirect\": $(echo "$redirect" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+    redirect=$(curl -sk --max-time 10 -o /dev/null -D - "${local.tfe_internal_https}" 2>/dev/null | grep -i "^location:" | tr -d '\r' || echo "no redirect")
+    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}'), \"redirect\": $(echo "$redirect" | tr -d '\r' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }
