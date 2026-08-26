@@ -111,6 +111,18 @@ data "external" "health_internal" {
   ]
 }
 
+# --- Internet egress check --- #
+
+data "external" "internet_egress" {
+  program = ["sh", "-c", <<-EOT
+    result=$(curl -sk --max-time 10 -o /dev/null \
+      -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} remote_ip=%%{remote_ip}" \
+      "https://www.google.com" 2>&1 || echo "failed")
+    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
+  EOT
+  ]
+}
+
 # --- curl timing: remote_ip confirms whether traffic is hitting ClusterIP or NLB --- #
 
 data "external" "curl_timing_fqdn" {

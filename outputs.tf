@@ -1,6 +1,11 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
+output "internet_egress" {
+  description = "curl to https://www.google.com. Confirms whether the agent pod has outbound internet access and external DNS resolution."
+  value       = data.external.internet_egress.result["result"]
+}
+
 output "dns_fqdn_resolution" {
   description = "nslookup output for the external TFE FQDN. After CoreDNS rewrite, should return the ClusterIP."
   value       = data.external.dns_fqdn.result["result"]
