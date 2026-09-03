@@ -60,12 +60,12 @@ output "probe_fqdn_root_secure" {
 }
 
 output "probe_fqdn_health_insecure" {
-  description = "FQDN / health path / TLS skip. Expects http_code=200, remote_ip=NLB IP at baseline; remote_ip=ClusterIP after hairpin fix."
+  description = "FQDN / /api/v2/ping / TLS skip. Expects http_code=200, remote_ip=NLB IP at baseline; remote_ip=ClusterIP after hairpin fix."
   value       = { for k in local.probe_fields : k => data.external.probe_fqdn_health_insecure.result[k] }
 }
 
 output "probe_fqdn_health_secure" {
-  description = "FQDN / health path / strict TLS. Expects http_code=200 if the TFE cert is valid and trusted."
+  description = "FQDN / /api/v2/ping / strict TLS. Expects http_code=200 if the TFE cert is valid and trusted."
   value       = { for k in local.probe_fields : k => data.external.probe_fqdn_health_secure.result[k] }
 }
 
@@ -80,12 +80,12 @@ output "probe_internal_root_secure" {
 }
 
 output "probe_internal_health_insecure" {
-  description = "Internal svc / health path / TLS skip. Expects http_code=200, remote_ip=ClusterIP."
+  description = "Internal svc / /api/v2/ping / TLS skip. Expects http_code=200, remote_ip=ClusterIP."
   value       = { for k in local.probe_fields : k => data.external.probe_internal_health_insecure.result[k] }
 }
 
 output "probe_internal_health_secure" {
-  description = "Internal svc / health path / strict TLS. Expects http_code=000 — cert CN mismatch on internal svc hostname."
+  description = "Internal svc / /api/v2/ping / strict TLS. Expects http_code=000 — cert CN mismatch on internal svc hostname."
   value       = { for k in local.probe_fields : k => data.external.probe_internal_health_secure.result[k] }
 }
 

@@ -27,7 +27,7 @@ variable "tfe_internal_svc" {
 locals {
   tfe_https_url      = "https://${var.tfe_fqdn}"
   tfe_internal_https = "https://${var.tfe_internal_svc}"
-  health_path        = "/api/v1/health/readiness?timeout=5"
+  health_path        = "/api/v2/ping"
 }
 
 # --- DNS resolution via nslookup and getent --- #
