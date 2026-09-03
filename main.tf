@@ -1,8 +1,8 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 #
-# Network diagnostics — runs inside a TFE agent pod to prove CoreDNS rewrite
-# and in-cluster connectivity to the TFE service are working correctly.
+# Network diagnostics — runs inside a TFE agent pod to diagnose connectivity
+# and hairpin routing between agent pods and the TFE service.
 #
 # Runs as user 'tfc-agent' (non-root, no sudo, no package manager access).
 # Available tools: curl, openssl, awk, grep, sed, ping.
@@ -15,7 +15,7 @@
 
 variable "tfe_fqdn" {
   type        = string
-  description = "External TFE FQDN (e.g. eks-tfe.example.com). Should resolve to the internal ClusterIP after CoreDNS rewrite."
+  description = "External TFE FQDN (e.g. eks-tfe.example.com)."
 }
 
 variable "tfe_internal_svc" {
@@ -91,22 +91,154 @@ data "external" "tls_cert_check" {
   ]
 }
 
-# --- HTTP health check via FQDN (goes through CoreDNS rewrite → ClusterIP) --- #
+# --- HTTP probes: 4 per target (2 paths × 2 TLS modes) --- #
+#
+# Every probe emits: http_code, remote_ip, time_namelookup, time_connect,
+# time_total, redirect_location.
+#
+# --max-redirs 0: never follow redirects — 301s surface as-is.
+# -D /tmp/hdrs_<suffix>: dump response headers to extract Location header
+#   without a second curl call. Unique suffix per probe avoids file collisions
+#   when Terraform evaluates data sources concurrently.
+# Insecure probes: -sk (skip TLS verify)
+# Secure probes:   -s  (strict TLS verify — will fail on CN mismatch)
 
-data "external" "health_fqdn" {
+locals {
+  curl_w = "http_code=%%{http_code} remote_ip=%%{remote_ip} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total}"
+}
+
+data "external" "probe_fqdn_root_insecure" {
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk --max-time 10 -o /dev/null -w "%%{http_code}" "${local.tfe_https_url}${local.health_path}" 2>&1 || echo "failed")
-    echo "{\"http_code\": \"$result\"}"
+    curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fri \
+      -w "${local.curl_w}" \
+      "${local.tfe_https_url}/" > /tmp/res_fri 2>/dev/null || echo "failed" > /tmp/res_fri
+    result=$(cat /tmp/res_fri)
+    location=$(grep -i "^location:" /tmp/hdrs_fri 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
   EOT
   ]
 }
 
-# --- HTTP health check via internal svc DNS directly --- #
-
-data "external" "health_internal" {
+data "external" "probe_fqdn_root_secure" {
   program = ["sh", "-c", <<-EOT
-    result=$(curl -sk --max-time 10 -o /dev/null -w "%%{http_code}" "${local.tfe_internal_https}${local.health_path}" 2>&1 || echo "failed")
-    echo "{\"http_code\": \"$result\"}"
+    curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_frs \
+      -w "${local.curl_w}" \
+      "${local.tfe_https_url}/" > /tmp/res_frs 2>/dev/null || echo "failed" > /tmp/res_frs
+    result=$(cat /tmp/res_frs)
+    location=$(grep -i "^location:" /tmp/hdrs_frs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
+  EOT
+  ]
+}
+
+data "external" "probe_fqdn_health_insecure" {
+  program = ["sh", "-c", <<-EOT
+    curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fhi \
+      -w "${local.curl_w}" \
+      "${local.tfe_https_url}${local.health_path}" > /tmp/res_fhi 2>/dev/null || echo "failed" > /tmp/res_fhi
+    result=$(cat /tmp/res_fhi)
+    location=$(grep -i "^location:" /tmp/hdrs_fhi 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
+  EOT
+  ]
+}
+
+data "external" "probe_fqdn_health_secure" {
+  program = ["sh", "-c", <<-EOT
+    curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fhs \
+      -w "${local.curl_w}" \
+      "${local.tfe_https_url}${local.health_path}" > /tmp/res_fhs 2>/dev/null || echo "failed" > /tmp/res_fhs
+    result=$(cat /tmp/res_fhs)
+    location=$(grep -i "^location:" /tmp/hdrs_fhs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
+  EOT
+  ]
+}
+
+data "external" "probe_internal_root_insecure" {
+  program = ["sh", "-c", <<-EOT
+    curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_iri \
+      -w "${local.curl_w}" \
+      "${local.tfe_internal_https}/" > /tmp/res_iri 2>/dev/null || echo "failed" > /tmp/res_iri
+    result=$(cat /tmp/res_iri)
+    location=$(grep -i "^location:" /tmp/hdrs_iri 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
+  EOT
+  ]
+}
+
+data "external" "probe_internal_root_secure" {
+  program = ["sh", "-c", <<-EOT
+    curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_irs \
+      -w "${local.curl_w}" \
+      "${local.tfe_internal_https}/" > /tmp/res_irs 2>/dev/null || echo "failed" > /tmp/res_irs
+    result=$(cat /tmp/res_irs)
+    location=$(grep -i "^location:" /tmp/hdrs_irs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
+  EOT
+  ]
+}
+
+data "external" "probe_internal_health_insecure" {
+  program = ["sh", "-c", <<-EOT
+    curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_ihi \
+      -w "${local.curl_w}" \
+      "${local.tfe_internal_https}${local.health_path}" > /tmp/res_ihi 2>/dev/null || echo "failed" > /tmp/res_ihi
+    result=$(cat /tmp/res_ihi)
+    location=$(grep -i "^location:" /tmp/hdrs_ihi 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
+  EOT
+  ]
+}
+
+data "external" "probe_internal_health_secure" {
+  program = ["sh", "-c", <<-EOT
+    curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_ihs \
+      -w "${local.curl_w}" \
+      "${local.tfe_internal_https}${local.health_path}" > /tmp/res_ihs 2>/dev/null || echo "failed" > /tmp/res_ihs
+    result=$(cat /tmp/res_ihs)
+    location=$(grep -i "^location:" /tmp/hdrs_ihs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
+    http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
+    remote_ip=$(echo "$result" | grep -o 'remote_ip=[^ ]*' | cut -d= -f2)
+    time_namelookup=$(echo "$result" | grep -o 'time_namelookup=[^ ]*' | cut -d= -f2)
+    time_connect=$(echo "$result" | grep -o 'time_connect=[^ ]*' | cut -d= -f2)
+    time_total=$(echo "$result" | grep -o 'time_total=[^ ]*' | cut -d= -f2)
+    echo "{\"http_code\":\"$http_code\",\"remote_ip\":\"$remote_ip\",\"time_namelookup\":\"$time_namelookup\",\"time_connect\":\"$time_connect\",\"time_total\":\"$time_total\",\"redirect_location\":\"$location\"}"
   EOT
   ]
 }
@@ -129,30 +261,6 @@ data "external" "internet_egress" {
       -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} remote_ip=%%{remote_ip}" \
       "https://www.google.com" 2>&1 || echo "failed")
     echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
-  EOT
-  ]
-}
-
-# --- curl timing: remote_ip confirms whether traffic is hitting ClusterIP or NLB --- #
-
-data "external" "curl_timing_fqdn" {
-  program = ["sh", "-c", <<-EOT
-    result=$(curl -sk --max-time 10 -o /dev/null \
-      -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total} remote_ip=%%{remote_ip}" \
-      "${local.tfe_https_url}" 2>&1 || echo "failed")
-    redirect=$(curl -sk --max-time 10 -o /dev/null -D - "${local.tfe_https_url}" 2>/dev/null | grep -i "^location:" | tr -d '\r' || echo "no redirect")
-    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}'), \"redirect\": $(echo "$redirect" | tr -d '\r' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
-  EOT
-  ]
-}
-
-data "external" "curl_timing_internal" {
-  program = ["sh", "-c", <<-EOT
-    result=$(curl -sk --max-time 10 -o /dev/null \
-      -w "http_code=%%{http_code} time_namelookup=%%{time_namelookup} time_connect=%%{time_connect} time_total=%%{time_total} remote_ip=%%{remote_ip}" \
-      "${local.tfe_internal_https}" 2>&1 || echo "failed")
-    redirect=$(curl -sk --max-time 10 -o /dev/null -D - "${local.tfe_internal_https}" 2>/dev/null | grep -i "^location:" | tr -d '\r' || echo "no redirect")
-    echo "{\"result\": $(echo "$result" | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}'), \"redirect\": $(echo "$redirect" | tr -d '\r' | sed 's/"/\\"/g' | awk '{print "\"" $0 "\""}')}"
   EOT
   ]
 }

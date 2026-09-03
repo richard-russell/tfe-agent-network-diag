@@ -31,8 +31,8 @@ output "getent_internal_svc" {
   value       = data.external.getent_internal.result["result"]
 }
 
-output "coredns_rewrite_verified" {
-  description = "Whether the external FQDN and internal service name resolve to the same IP, confirming the CoreDNS rewrite is active."
+output "hairpin_routing_active" {
+  description = "Whether the external FQDN and internal service name resolve to the same IP. true = hairpin fix is working (CoreDNS rewrite or hostAliases), false = FQDN is routing via the external NLB."
   value = {
     fqdn_resolves_to         = data.external.dns_rewrite_check.result["fqdn_resolves_to"]
     internal_svc_resolves_to = data.external.dns_rewrite_check.result["internal_svc_resolves_to"]
@@ -45,29 +45,47 @@ output "tls_certificate" {
   value       = data.external.tls_cert_check.result["result"]
 }
 
-output "health_check_via_fqdn" {
-  description = "HTTP response code from the TFE readiness endpoint via the external FQDN. Expects 200 once CoreDNS rewrite is active."
-  value       = data.external.health_fqdn.result["http_code"]
+locals {
+  probe_fields = ["http_code", "remote_ip", "time_namelookup", "time_connect", "time_total", "redirect_location"]
 }
 
-output "health_check_via_internal_svc" {
-  description = "HTTP response code from the TFE readiness endpoint via the internal service DNS name directly. Expects 200."
-  value       = data.external.health_internal.result["http_code"]
+output "probe_fqdn_root_insecure" {
+  description = "FQDN / root path / TLS skip. Expects http_code=301, remote_ip=NLB IP at baseline; remote_ip=ClusterIP after hairpin fix."
+  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_root_insecure.result[k] }
 }
 
-output "curl_timing_fqdn" {
-  description = "curl timing and remote_ip for the external FQDN. If CoreDNS rewrite is working, remote_ip should be the ClusterIP (172.20.x.x). time_connect should be sub-millisecond."
-  value = {
-    timing   = data.external.curl_timing_fqdn.result["result"]
-    redirect = data.external.curl_timing_fqdn.result["redirect"]
-  }
+output "probe_fqdn_root_secure" {
+  description = "FQDN / root path / strict TLS. Expects http_code=301 if the TFE cert is valid and trusted by the agent pod's CA bundle."
+  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_root_secure.result[k] }
 }
 
-output "curl_timing_internal_svc" {
-  description = "curl timing and remote_ip for the internal service DNS name directly."
-  value = {
-    timing   = data.external.curl_timing_internal.result["result"]
-    redirect = data.external.curl_timing_internal.result["redirect"]
-  }
+output "probe_fqdn_health_insecure" {
+  description = "FQDN / health path / TLS skip. Expects http_code=200, remote_ip=NLB IP at baseline; remote_ip=ClusterIP after hairpin fix."
+  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_health_insecure.result[k] }
+}
+
+output "probe_fqdn_health_secure" {
+  description = "FQDN / health path / strict TLS. Expects http_code=200 if the TFE cert is valid and trusted."
+  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_health_secure.result[k] }
+}
+
+output "probe_internal_root_insecure" {
+  description = "Internal svc / root path / TLS skip. Expects http_code=301, remote_ip=ClusterIP."
+  value       = { for k in local.probe_fields : k => data.external.probe_internal_root_insecure.result[k] }
+}
+
+output "probe_internal_root_secure" {
+  description = "Internal svc / root path / strict TLS. Expects http_code=000 — cert CN is the external FQDN, not the internal svc name."
+  value       = { for k in local.probe_fields : k => data.external.probe_internal_root_secure.result[k] }
+}
+
+output "probe_internal_health_insecure" {
+  description = "Internal svc / health path / TLS skip. Expects http_code=200, remote_ip=ClusterIP."
+  value       = { for k in local.probe_fields : k => data.external.probe_internal_health_insecure.result[k] }
+}
+
+output "probe_internal_health_secure" {
+  description = "Internal svc / health path / strict TLS. Expects http_code=000 — cert CN mismatch on internal svc hostname."
+  value       = { for k in local.probe_fields : k => data.external.probe_internal_health_secure.result[k] }
 }
 
