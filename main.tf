@@ -141,7 +141,7 @@ data "external" "probe_fqdn_root_secure" {
   ]
 }
 
-data "external" "probe_fqdn_health_insecure" {
+data "external" "probe_fqdn_ping_insecure" {
   program = ["sh", "-c", <<-EOT
     curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fhi \
       -w "${local.curl_w}" \
@@ -158,7 +158,7 @@ data "external" "probe_fqdn_health_insecure" {
   ]
 }
 
-data "external" "probe_fqdn_health_secure" {
+data "external" "probe_fqdn_ping_secure" {
   program = ["sh", "-c", <<-EOT
     curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fhs \
       -w "${local.curl_w}" \
@@ -209,7 +209,7 @@ data "external" "probe_internal_root_secure" {
   ]
 }
 
-data "external" "probe_internal_health_insecure" {
+data "external" "probe_internal_ping_insecure" {
   program = ["sh", "-c", <<-EOT
     curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_ihi \
       -w "${local.curl_w}" \
@@ -226,7 +226,7 @@ data "external" "probe_internal_health_insecure" {
   ]
 }
 
-data "external" "probe_internal_health_secure" {
+data "external" "probe_internal_ping_secure" {
   program = ["sh", "-c", <<-EOT
     curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_ihs \
       -w "${local.curl_w}" \

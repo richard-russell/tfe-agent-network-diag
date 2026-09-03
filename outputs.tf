@@ -59,14 +59,14 @@ output "probe_fqdn_root_secure" {
   value       = { for k in local.probe_fields : k => data.external.probe_fqdn_root_secure.result[k] }
 }
 
-output "probe_fqdn_health_insecure" {
+output "probe_fqdn_ping_insecure" {
   description = "FQDN / /api/v2/ping / TLS skip. Expects http_code=200, remote_ip=NLB IP at baseline; remote_ip=ClusterIP after hairpin fix."
-  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_health_insecure.result[k] }
+  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_ping_insecure.result[k] }
 }
 
-output "probe_fqdn_health_secure" {
+output "probe_fqdn_ping_secure" {
   description = "FQDN / /api/v2/ping / strict TLS. Expects http_code=200 if the TFE cert is valid and trusted."
-  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_health_secure.result[k] }
+  value       = { for k in local.probe_fields : k => data.external.probe_fqdn_ping_secure.result[k] }
 }
 
 output "probe_internal_root_insecure" {
@@ -79,13 +79,13 @@ output "probe_internal_root_secure" {
   value       = { for k in local.probe_fields : k => data.external.probe_internal_root_secure.result[k] }
 }
 
-output "probe_internal_health_insecure" {
+output "probe_internal_ping_insecure" {
   description = "Internal svc / /api/v2/ping / TLS skip. Expects http_code=200, remote_ip=ClusterIP."
-  value       = { for k in local.probe_fields : k => data.external.probe_internal_health_insecure.result[k] }
+  value       = { for k in local.probe_fields : k => data.external.probe_internal_ping_insecure.result[k] }
 }
 
-output "probe_internal_health_secure" {
+output "probe_internal_ping_secure" {
   description = "Internal svc / /api/v2/ping / strict TLS. Expects http_code=000 — cert CN mismatch on internal svc hostname."
-  value       = { for k in local.probe_fields : k => data.external.probe_internal_health_secure.result[k] }
+  value       = { for k in local.probe_fields : k => data.external.probe_internal_ping_secure.result[k] }
 }
 
