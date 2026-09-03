@@ -111,7 +111,7 @@ data "external" "probe_fqdn_root_insecure" {
   program = ["sh", "-c", <<-EOT
     curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fri \
       -w "${local.curl_w}" \
-      "${local.tfe_https_url}/" > /tmp/res_fri 2>/dev/null || echo "failed" > /tmp/res_fri
+      "${local.tfe_https_url}/" > /tmp/res_fri 2>/dev/null; [ ! -s /tmp/res_fri ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_fri
     result=$(cat /tmp/res_fri)
     location=$(grep -i "^location:" /tmp/hdrs_fri 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
@@ -128,7 +128,7 @@ data "external" "probe_fqdn_root_secure" {
   program = ["sh", "-c", <<-EOT
     curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_frs \
       -w "${local.curl_w}" \
-      "${local.tfe_https_url}/" > /tmp/res_frs 2>/dev/null || echo "failed" > /tmp/res_frs
+      "${local.tfe_https_url}/" > /tmp/res_frs 2>/dev/null; [ ! -s /tmp/res_frs ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_frs
     result=$(cat /tmp/res_frs)
     location=$(grep -i "^location:" /tmp/hdrs_frs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
@@ -145,7 +145,7 @@ data "external" "probe_fqdn_health_insecure" {
   program = ["sh", "-c", <<-EOT
     curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fhi \
       -w "${local.curl_w}" \
-      "${local.tfe_https_url}${local.health_path}" > /tmp/res_fhi 2>/dev/null || echo "failed" > /tmp/res_fhi
+      "${local.tfe_https_url}${local.health_path}" > /tmp/res_fhi 2>/dev/null; [ ! -s /tmp/res_fhi ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_fhi
     result=$(cat /tmp/res_fhi)
     location=$(grep -i "^location:" /tmp/hdrs_fhi 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
@@ -162,7 +162,7 @@ data "external" "probe_fqdn_health_secure" {
   program = ["sh", "-c", <<-EOT
     curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_fhs \
       -w "${local.curl_w}" \
-      "${local.tfe_https_url}${local.health_path}" > /tmp/res_fhs 2>/dev/null || echo "failed" > /tmp/res_fhs
+      "${local.tfe_https_url}${local.health_path}" > /tmp/res_fhs 2>/dev/null; [ ! -s /tmp/res_fhs ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_fhs
     result=$(cat /tmp/res_fhs)
     location=$(grep -i "^location:" /tmp/hdrs_fhs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
@@ -179,7 +179,7 @@ data "external" "probe_internal_root_insecure" {
   program = ["sh", "-c", <<-EOT
     curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_iri \
       -w "${local.curl_w}" \
-      "${local.tfe_internal_https}/" > /tmp/res_iri 2>/dev/null || echo "failed" > /tmp/res_iri
+      "${local.tfe_internal_https}/" > /tmp/res_iri 2>/dev/null; [ ! -s /tmp/res_iri ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_iri
     result=$(cat /tmp/res_iri)
     location=$(grep -i "^location:" /tmp/hdrs_iri 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
@@ -196,7 +196,7 @@ data "external" "probe_internal_root_secure" {
   program = ["sh", "-c", <<-EOT
     curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_irs \
       -w "${local.curl_w}" \
-      "${local.tfe_internal_https}/" > /tmp/res_irs 2>/dev/null || echo "failed" > /tmp/res_irs
+      "${local.tfe_internal_https}/" > /tmp/res_irs 2>/dev/null; [ ! -s /tmp/res_irs ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_irs
     result=$(cat /tmp/res_irs)
     location=$(grep -i "^location:" /tmp/hdrs_irs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
@@ -213,7 +213,7 @@ data "external" "probe_internal_health_insecure" {
   program = ["sh", "-c", <<-EOT
     curl -sk --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_ihi \
       -w "${local.curl_w}" \
-      "${local.tfe_internal_https}${local.health_path}" > /tmp/res_ihi 2>/dev/null || echo "failed" > /tmp/res_ihi
+      "${local.tfe_internal_https}${local.health_path}" > /tmp/res_ihi 2>/dev/null; [ ! -s /tmp/res_ihi ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_ihi
     result=$(cat /tmp/res_ihi)
     location=$(grep -i "^location:" /tmp/hdrs_ihi 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
@@ -230,7 +230,7 @@ data "external" "probe_internal_health_secure" {
   program = ["sh", "-c", <<-EOT
     curl -s --max-redirs 0 --max-time 10 -o /dev/null -D /tmp/hdrs_ihs \
       -w "${local.curl_w}" \
-      "${local.tfe_internal_https}${local.health_path}" > /tmp/res_ihs 2>/dev/null || echo "failed" > /tmp/res_ihs
+      "${local.tfe_internal_https}${local.health_path}" > /tmp/res_ihs 2>/dev/null; [ ! -s /tmp/res_ihs ] && echo "http_code=curl_error remote_ip= time_namelookup= time_connect= time_total=" > /tmp/res_ihs
     result=$(cat /tmp/res_ihs)
     location=$(grep -i "^location:" /tmp/hdrs_ihs 2>/dev/null | tr -d '\r' | sed 's/^[Ll]ocation: //' || echo "")
     http_code=$(echo "$result" | grep -o 'http_code=[^ ]*' | cut -d= -f2)
